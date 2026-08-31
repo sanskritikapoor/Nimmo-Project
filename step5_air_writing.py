@@ -1,22 +1,26 @@
 """
-NIMMO - Step 5: Air Writing
-===========================
+NIMMO - Step 5: Air Writing with Color Palette
+===============================================
 This is the main feature! Write in the air with your finger.
 
 Features:
 1. Drawing Mode: Index finger acts as a pen
-2. Color Selection: Different gestures for different colors
-3. Clear Canvas: Gesture to clear the canvas
-4. Save Drawing: Save your drawing to a file
+2. Color Palette: Visual color selector with multiple colors
+3. Brush Size Control: Change line thickness
+4. Clear Canvas: Gesture to clear the canvas
+5. Save Drawing: Save your drawing to a file
 
 Controls:
-- Index finger: Draw
-- Index + Middle fingers (up): Switch to red color
-- Index + Middle + Ring fingers (up): Switch to blue color
-- Peace sign: Switch to green color
-- Thumbs up: Clear canvas
+- Index finger up: Draw
+- Index finger only: Switch between colors (cycle through palette)
+- Index + Middle: Increase brush size
+- Index + Middle + Ring: Decrease brush size
+- Closed fist + thumbs distance > 100: Clear canvas
 - Press 's' to save drawing
 - Press 'q' to quit
+
+Color Palette:
+- Red, Green, Blue, Yellow, Purple, Cyan, Orange, Pink, Black, White
 """
 
 import cv2
@@ -38,7 +42,7 @@ except AttributeError:
 
 class AirWriter:
     """
-    Class to handle air writing functionality.
+    Class to handle air writing functionality with color palette.
     """
     
     def __init__(self, canvas_width=1280, canvas_height=720):
@@ -55,21 +59,26 @@ class AirWriter:
         # Create blank canvas (white background)
         self.canvas = 255 * cv2.ones((canvas_height, canvas_width, 3), dtype=cv2.uint8)
         
-        # Drawing settings
-        self.current_color = (0, 0, 255)  # BGR format: Red
+        # Extended color palette (BGR format)
+        self.colors = {
+            0: {'name': 'Red', 'bgr': (0, 0, 255)},
+            1: {'name': 'Green', 'bgr': (0, 255, 0)},
+            2: {'name': 'Blue', 'bgr': (255, 0, 0)},
+            3: {'name': 'Yellow', 'bgr': (0, 255, 255)},
+            4: {'name': 'Purple', 'bgr': (255, 0, 255)},
+            5: {'name': 'Cyan', 'bgr': (255, 255, 0)},
+            6: {'name': 'Orange', 'bgr': (0, 165, 255)},
+            7: {'name': 'Pink', 'bgr': (203, 192, 255)},
+            8: {'name': 'Black', 'bgr': (0, 0, 0)},
+            9: {'name': 'White', 'bgr': (255, 255, 255)},
+        }
+        
+        # Current settings
+        self.current_color_index = 0
+        self.current_color = self.colors[0]['bgr']
         self.brush_size = 5
         self.drawing = False
         self.last_point = None
-        
-        # Color options
-        self.colors = {
-            'red': (0, 0, 255),
-            'green': (0, 255, 0),
-            'blue': (255, 0, 0),
-            'yellow': (0, 255, 255),
-            'purple': (255, 0, 255),
-            'cyan': (255, 255, 0),
-        }
     
     def get_landmark_coordinates(self, hand_landmarks, frame_shape):
         """
@@ -99,31 +108,29 @@ class AirWriter:
         pip_y = landmarks_dict[pip_idx][1]
         return tip_y < pip_y
     
-    def detect_color_gesture(self, landmarks_dict):
+    def cycle_color(self):
         """
-        Detect color selection gesture.
-        
-        Returns:
-            Color tuple or None
+        Cycle to next color in palette.
         """
-        # Get finger positions
-        index_up = self.is_finger_up(landmarks_dict, 8, 6)
-        middle_up = self.is_finger_up(landmarks_dict, 12, 10)
-        ring_up = self.is_finger_up(landmarks_dict, 16, 14)
-        
-        # Red: Only index finger up
-        if index_up and not middle_up and not ring_up:
-            return self.colors['red']
-        
-        # Green: Index and middle up
-        if index_up and middle_up and not ring_up:
-            return self.colors['green']
-        
-        # Blue: Index, middle, and ring up
-        if index_up and middle_up and ring_up:
-            return self.colors['blue']
-        
-        return None
+        self.current_color_index = (self.current_color_index + 1) % len(self.colors)
+        self.current_color = self.colors[self.current_color_index]['bgr']
+        return self.colors[self.current_color_index]['name']
+    
+    def increase_brush_size(self):
+        """
+        Increase brush size (max 20).
+        """
+        if self.brush_size < 20:
+            self.brush_size += 2
+        return self.brush_size
+    
+    def decrease_brush_size(self):
+        """
+        Decrease brush size (min 1).
+        """
+        if self.brush_size > 1:
+            self.brush_size -= 2
+        return self.brush_size
     
     def map_to_canvas(self, frame_pos, frame_shape):
         """
@@ -177,26 +184,46 @@ class AirWriter:
         # Get finger positions
         index_tip = landmarks_dict[8]
         thumb_tip = landmarks_dict[4]
+        middle_tip = landmarks_dict[12]
+        ring_tip = landmarks_dict[16]
         
         # Get finger states
         index_up = self.is_finger_up(landmarks_dict, 8, 6)
         middle_up = self.is_finger_up(landmarks_dict, 12, 10)
         ring_up = self.is_finger_up(landmarks_dict, 16, 14)
         pinky_up = self.is_finger_up(landmarks_dict, 20, 18)
+        thumb_up = self.is_finger_up(landmarks_dict, 4, 3)
         
-        # Check for color gesture
-        color = self.detect_color_gesture(landmarks_dict)
-        if color is not None:
-            self.current_color = color
+        # Check for brush size gestures BEFORE checking drawing
+        
+        # Increase brush size: Index + Middle up (but ring down)
+        if index_up and middle_up and not ring_up and not pinky_up:
+            new_size = self.increase_brush_size()
             self.drawing = False
             self.last_point = None
-            return f"Color: {[k for k, v in self.colors.items() if v == color][0].upper()}"
+            return f"BRUSH SIZE: {new_size}px"
+        
+        # Decrease brush size: Index + Middle + Ring up
+        if index_up and middle_up and ring_up and not pinky_up:
+            new_size = self.decrease_brush_size()
+            self.drawing = False
+            self.last_point = None
+            return f"BRUSH SIZE: {new_size}px"
+        
+        # Cycle color: Index + Thumb close (but other fingers down)
+        thumb_index_distance = self.distance(thumb_tip, index_tip)
+        if thumb_index_distance < 50 and not middle_up and not ring_up and not pinky_up:
+            color_name = self.cycle_color()
+            self.drawing = False
+            self.last_point = None
+            return f"COLOR: {color_name}"
         
         # Check for clear gesture (thumbs up: thumb up, others down)
-        if not index_up and not middle_up and not ring_up and not pinky_up:
-            thumb_index_distance = self.distance(thumb_tip, index_tip)
-            if thumb_index_distance > 100:
-                # Thumbs up gesture detected
+        if not index_up and not middle_up and not ring_up and not pinky_up and thumb_up:
+            # Check if thumb is significantly away from hand (thumbs up gesture)
+            wrist = landmarks_dict[0]
+            thumb_base = landmarks_dict[2]
+            if thumb_tip[1] > wrist[1] + 100:  # Thumb significantly below wrist
                 self.canvas = 255 * cv2.ones((self.canvas_height, self.canvas_width, 3), 
                                             dtype=cv2.uint8)
                 self.last_point = None
@@ -236,11 +263,45 @@ class AirWriter:
         cv2.imwrite(filename, self.canvas)
         
         return filename
+    
+    def draw_color_palette(self, frame):
+        """
+        Draw color palette on the video frame.
+        
+        Args:
+            frame: Video frame to draw palette on
+        """
+        palette_x = 20
+        palette_y = 20
+        color_box_size = 30
+        spacing = 5
+        
+        # Draw palette background
+        cv2.rectangle(frame, (palette_x - 5, palette_y - 5), 
+                     (palette_x + (len(self.colors) * (color_box_size + spacing)), palette_y + color_box_size + 5),
+                     (50, 50, 50), -1)
+        cv2.rectangle(frame, (palette_x - 5, palette_y - 5), 
+                     (palette_x + (len(self.colors) * (color_box_size + spacing)), palette_y + color_box_size + 5),
+                     (200, 200, 200), 2)
+        
+        # Draw each color
+        for idx, color_data in self.colors.items():
+            x = palette_x + (idx * (color_box_size + spacing))
+            y = palette_y
+            
+            # Draw color box
+            cv2.rectangle(frame, (x, y), (x + color_box_size, y + color_box_size),
+                         color_data['bgr'], -1)
+            
+            # Highlight current color
+            if idx == self.current_color_index:
+                cv2.rectangle(frame, (x - 3, y - 3), (x + color_box_size + 3, y + color_box_size + 3),
+                             (255, 255, 255), 3)
 
 
 def main():
     """
-    Main function for air writing.
+    Main function for air writing with color palette.
     """
     # Open webcam
     cap = cv2.VideoCapture(0)
@@ -265,15 +326,19 @@ def main():
     # Initialize air writer
     air_writer = AirWriter(canvas_width=640, canvas_height=480)
     
-    print("Air Writing started. Press 'q' to quit, 's' to save drawing.")
-    print("\nControls:")
-    print("- Index finger up: Draw")
-    print("- Index finger only: Red color")
-    print("- Index + Middle: Green color")
-    print("- Index + Middle + Ring: Blue color")
-    print("- Close fist + thumbs up: Clear canvas")
-    print("- 's' key: Save drawing")
-    print("- 'q' key: Quit")
+    print("=" * 70)
+    print("Air Writing with Color Palette Started")
+    print("=" * 70)
+    print("\nGesture Controls:")
+    print("- Index finger up           → DRAW")
+    print("- Thumb + Index close       → CYCLE COLOR (next in palette)")
+    print("- Index + Middle up         → INCREASE BRUSH SIZE")
+    print("- Index + Middle + Ring up  → DECREASE BRUSH SIZE")
+    print("- Thumbs up (away from hand)→ CLEAR CANVAS")
+    print("- Press 's' key             → SAVE DRAWING")
+    print("- Press 'q' key             → QUIT")
+    print("\nColor Palette: Red, Green, Blue, Yellow, Purple, Cyan, Orange, Pink, Black, White")
+    print("=" * 70 + "\n")
     
     while True:
         ok, frame = cap.read()
@@ -307,13 +372,17 @@ def main():
                 # Process hand and get status
                 status = air_writer.process_hand(hand_landmarks, frame.shape)
         
+        # Draw color palette on frame
+        air_writer.draw_color_palette(frame)
+        
         # Add text on frame
-        cv2.putText(frame, "NIMMO - Step 5: Air Writing", (10, 30),
+        cv2.putText(frame, "NIMMO - Air Writing with Color Palette", (10, frame_height - 80),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-        cv2.putText(frame, f"Status: {status}", (10, 65),
+        cv2.putText(frame, f"Status: {status}", (10, frame_height - 45),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, air_writer.current_color, 2)
-        cv2.putText(frame, "Press 's' to save, 'q' to quit", (10, 100),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+        cv2.putText(frame, f"Current Color: {air_writer.colors[air_writer.current_color_index]['name']} | Brush: {air_writer.brush_size}px", 
+                    (10, frame_height - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, air_writer.current_color, 2)
         
         # Resize canvas to fit display
         display_canvas = cv2.resize(air_writer.canvas, (frame_width, frame_height))
@@ -331,7 +400,7 @@ def main():
             break
         elif key == ord("s"):
             filename = air_writer.save_drawing()
-            print(f"Drawing saved to: {filename}")
+            print(f"✅ Drawing saved to: {filename}")
     
     # Cleanup
     hands.close()
