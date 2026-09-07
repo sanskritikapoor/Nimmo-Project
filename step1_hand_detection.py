@@ -16,16 +16,10 @@ Run this to test if hand detection is working correctly.
 import cv2
 import mediapipe as mp
 
-# Import MediaPipe hand detection modules
-try:
-    mp_hands = mp.solutions.hands
-    mp_draw = mp.solutions.drawing_utils
-    mp_styles = mp.solutions.drawing_styles
-except AttributeError:
-    # Fallback for different MediaPipe builds
-    from mediapipe.python.solutions import hands as mp_hands
-    from mediapipe.python.solutions import drawing_utils as mp_draw
-    from mediapipe.python.solutions import drawing_styles as mp_styles
+# Initialize MediaPipe
+mp_hands = mp.solutions.hands
+mp_draw = mp.solutions.drawing_utils
+mp_styles = mp.solutions.drawing_styles
 
 
 def main():
